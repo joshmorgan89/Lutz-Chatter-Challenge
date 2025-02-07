@@ -29,29 +29,44 @@ function Messages() {
   }
 
   const sendMessage = useCallback(() => {
-    if (message.trim() === '') return;
+    if (message.trim() === '') {
+      console.error('Message cannot be empty.');
+      return;
+    }
 
-    const userMessage = { id: Date.now(), message, user: 'me' };
-    setMessages((prevMessages) => [...prevMessages, userMessage]);
-    setLatestMessage(message);
-    socket.emit('user-message', { message });
-    playSend();
+    try {
+      const userMessage = { id: Date.now(), message, user: 'me' };
+      setMessages((prevMessages) => [...prevMessages, userMessage]);
+      setLatestMessage(message);
+      socket.emit('user-message', { message });
+      playSend();
 
-    // Clear input field
-    setMessage('');
+      // Clear input field
+      setMessage('');
+    } catch (error) {
+      console.error('Error sending message:', error);
+    }
   }, [message, setMessages, setMessage, setLatestMessage, playSend]);
 
+  // Listen for bot messages and typing events
   useEffect(() => {
-    socket.on('bot-typing', () => {
-      setBotTyping(true);
-    });
+    socket.on('bot-typing', () => setBotTyping(true));
 
     socket.on('bot-message', (message) => {
-      setBotTyping(false);
-      const botMessage = { id: Date.now(), message, user: 'bot' };
-      setMessages((prevMessages) => [...prevMessages, botMessage]);
-      setLatestMessage(botMessage.message);
-      playReceive();
+      try {
+        if (!message || typeof message !== 'string') {
+          console.error('Invalid message received from bot:', message);
+          return;
+        }
+
+        setBotTyping(false);
+        const botMessage = { id: Date.now(), message, user: 'bot' };
+        setMessages((prevMessages) => [...prevMessages, botMessage]);
+        setLatestMessage(botMessage.message);
+        playReceive();
+      } catch (error) {
+        console.error('Error handling bot message:', error);
+      }
     });
 
     return () => {
@@ -60,11 +75,31 @@ function Messages() {
     };
   }, [setMessages, setLatestMessage, setBotTyping, playReceive]);
 
+  // Scroll to bottom of message list when new messages are added
   useEffect(() => {
     if (messageListRef.current) {
       messageListRef.current.scrollTop = messageListRef.current.scrollHeight;
     }
   }, [messages]);
+
+  // Handle socket errors and disconnects
+  useEffect(() => {
+    const handleError = (error) => {
+        console.error("Socket error:", error);
+    };
+
+    const handleDisconnect = () => {
+        console.warn("Socket disconnected. Attempting to reconnect...");
+    };
+
+    socket.on("connect_error", handleError);
+    socket.on("disconnect", handleDisconnect);
+
+    return () => {
+        socket.off("connect_error", handleError);
+        socket.off("disconnect", handleDisconnect);
+    };
+  }, []);
 
   return (
     <div className='messages'>
